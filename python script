@@ -1,0 +1,99 @@
+# ---------------------------------------------
+# Café Sales Data Cleaning Script
+# Author: Santiago Rios
+# Description: Cleaned a messy transactional dataset by handling missing values,
+# fixing data types, and standardizing columns using pandas.
+# Tools: Python, pandas
+# ---------------------------------------------
+
+# Step 0: Import necessary library
+import pandas as pd
+
+# Step 1: Load dataset
+df = pd.read_csv('D:/School/Power Bi Dashboards/dirty_cafe_sales.csv')
+
+# Step 2: Standardize column names (e.g., strip spaces)
+df.columns = df.columns.str.strip()
+
+# Step 3: Display full column output and preview data
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', None)
+print(df.head(10))
+
+# Step 4: Explore basic structure and missing data
+# print(df.shape)
+# print(df.dtypes)
+# print(df.columns)
+print(df.isna().sum())
+print(df.duplicated().sum())
+
+# Step 5: Create a copy to clean
+df_clean = df.copy()
+
+# Step 6: Convert financial columns to numeric (safe conversion)
+df_clean['Total Spent'] = pd.to_numeric(df_clean['Total Spent'], errors='coerce')
+df_clean['Price Per Unit'] = pd.to_numeric(df_clean['Price Per Unit'], errors='coerce')
+df_clean['Quantity'] = pd.to_numeric(df_clean['Quantity'], errors='coerce')
+
+# Step 7: Fill missing unit prices using average per item
+avg_price_by_item = df_clean.groupby('Item')['Price Per Unit'].mean()
+missing_price = df_clean['Price Per Unit'].isna()
+df_clean.loc[missing_price, 'Price Per Unit'] = (
+    df_clean.loc[missing_price, 'Item'].map(avg_price_by_item)
+)
+
+# Step 8: Fill Total Spent from Quantity and Price Per Unit
+missing_total = df_clean['Total Spent'].isna()
+df_clean.loc[missing_total, 'Total Spent'] = (
+    df_clean.loc[missing_total, 'Quantity'] * df_clean.loc[missing_total, 'Price Per Unit']
+)
+
+# Step 9: Fill Quantity from Total Spent and Price Per Unit
+missing_quantity = df_clean['Quantity'].isna()
+df_clean.loc[missing_quantity, 'Quantity'] = (
+    df_clean.loc[missing_quantity, 'Total Spent'] / df_clean.loc[missing_quantity, 'Price Per Unit']
+)
+
+# Round Quantity to nearest whole number
+df_clean['Quantity'] = df_clean['Quantity'].round()
+
+# Step 10: Print remaining missing values in key columns
+print(df_clean[['Quantity', 'Price Per Unit', 'Total Spent']].isna().sum())
+
+# Step 11: Drop rows that still have missing financial values
+df_clean = df_clean.dropna(subset=['Total Spent', 'Price Per Unit', 'Quantity'])
+
+# Step 12: Fix column data types
+df_clean['Quantity'] = df_clean['Quantity'].astype(int)
+df_clean['Price Per Unit'] = df_clean['Price Per Unit'].astype(float)
+df_clean['Total Spent'] = df_clean['Total Spent'].astype(float)
+df_clean['Transaction Date'] = pd.to_datetime(df_clean['Transaction Date'], errors='coerce')
+df_clean['Item'] = df_clean['Item'].astype('category')
+df_clean['Payment Method'] = df_clean['Payment Method'].astype('category')
+
+# Step 13: Rename columns to follow clean naming conventions
+df_clean.rename(columns={
+    'Transaction ID': 'transaction_id',
+    'Transaction Date': 'transaction_date',
+    'Location': 'location',
+    'Item': 'item',
+    'Quantity': 'quantity',
+    'Price Per Unit': 'unit_price',
+    'Total Spent': 'total_spent',
+    'Payment Method': 'payment_method'
+}, inplace=True)
+
+# Step 14: Check for logical mismatches in totals
+check = (df_clean['quantity'] * df_clean['unit_price']).round(2) != df_clean['total_spent'].round(2)
+if check.sum() > 0:
+    print(f"Warning: {check.sum()} rows have inconsistent totals.")
+
+# Step 15: Reset index for clean final dataset
+df_clean.reset_index(drop=True, inplace=True)
+# Step 16: Flag rows where total_spent does not equal quantity × unit_price
+df_clean['inconsistent_total'] = (
+    (df_clean['quantity'] * df_clean['unit_price']).round(2) != df_clean['total_spent'].round(2)
+)
+
+# Step 16: Export cleaned data
+df_clean.to_csv('D:/School/Power Bi Dashboards/cleaned_cafe_sales.csv', index=False)
